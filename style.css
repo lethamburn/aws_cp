@@ -701,6 +701,11 @@ p  { color: var(--text2); line-height: 1.7; }
   align-self: flex-start;
 }
 
+.glosario-cat-section { margin-bottom: 32px; }
+.glosario-cat-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.glosario-cat-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; background: rgba(255,153,0,0.15); color: var(--accent); }
+.glosario-cat-count { font-size: 12px; color: var(--text2); }
+
 /* ============================================================
    MAPA MENTAL
    ============================================================ */

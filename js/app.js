@@ -87,17 +87,16 @@ function renderInicio() {
   const glossarySeen = parseInt(prog.glossarySeen || 0);
 
   const sections = [
-    { id: 'temario', icon: '📚', title: 'Temario', desc: 'Repasa los 4 dominios del examen con contenido completo en castellano.' },
+    { id: 'temario', icon: '📚', title: 'Temario', desc: 'Repasa los 4 dominios del examen con contenido completo.' },
     { id: 'glosario', icon: '📖', title: 'Glosario', desc: `+${GLOSARIO.length} términos con definiciones. Búsqueda instantánea.` },
     { id: 'mapa', icon: '🗺️', title: 'Mapa Mental', desc: 'Esquema visual expandible de todos los servicios AWS organizados por dominio.' },
     { id: 'trucos', icon: '💡', title: 'Trucos', desc: 'Estrategias de examen, mnemónicos y guía para el día D.' },
-    { id: 'simulacros', icon: '📝', title: 'Simulacros', desc: `${SIMULACROS.length} simulacros completos traducidos al castellano con corrección inmediata.` },
+    { id: 'simulacros', icon: '📝', title: 'Simulacros', desc: `${SIMULACROS.length} simulacros completos con corrección inmediata.` },
   ];
 
   el('inicio').innerHTML = `
     <div class="section-hero">
       <h1>☁ Preparación AWS Cloud Practitioner</h1>
-      <p>Todo lo que necesitas para aprobar la certificación AWS CLF-C02 en un solo lugar, en castellano.</p>
     </div>
 
     <div class="stats-grid">
@@ -115,11 +114,6 @@ function renderInicio() {
         <div class="stat-icon">☁️</div>
         <div class="stat-value">${GLOSARIO.length}</div>
         <div class="stat-label">Términos en el glosario</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">🎯</div>
-        <div class="stat-value">${avgScore >= 80 ? '✅' : avgScore >= 70 ? '⚡' : avgScore > 0 ? '📈' : '🚀'}</div>
-        <div class="stat-label">${avgScore >= 80 ? '¡Listo para el examen!' : avgScore >= 70 ? 'Casi listo' : avgScore > 0 ? 'En progreso' : 'Empieza ahora'}</div>
       </div>
     </div>
 
@@ -262,13 +256,6 @@ function markTopic(id, done) {
 // ---- GLOSARIO ----
 function renderGlosario() {
   const cats = ['Todos', ...new Set(GLOSARIO.map(g => g.cat))];
-  const filtered = GLOSARIO.filter(g => {
-    const matchCat = STATE.glosarioFilter === 'Todos' || g.cat === STATE.glosarioFilter;
-    const matchSearch = !STATE.glosarioSearch ||
-      g.nombre.toLowerCase().includes(STATE.glosarioSearch.toLowerCase()) ||
-      g.def.toLowerCase().includes(STATE.glosarioSearch.toLowerCase());
-    return matchCat && matchSearch;
-  });
 
   el('glosario').innerHTML = `
     <div class="section-hero">
@@ -278,7 +265,7 @@ function renderGlosario() {
 
     <div class="glosario-search">
       <span class="search-icon">🔍</span>
-      <input type="text" id="glosarioInput" placeholder="Buscar término o definición..." value="${escHtml(STATE.glosarioSearch)}" oninput="filterGlosario(this.value)">
+      <input type="text" id="glosarioInput" placeholder="Buscar término o definición..." value="${escHtml(STATE.glosarioSearch)}">
     </div>
 
     <div class="glosario-filters">
@@ -289,33 +276,92 @@ function renderGlosario() {
       `).join('')}
     </div>
 
-    <div class="glosario-count">${filtered.length} términos encontrados</div>
-
-    <div class="glosario-grid">
-      ${filtered.map((g, i) => `
-        <div class="glosario-term" id="term-${i}" onclick="toggleTerm(${i})">
-          <div class="term-left">
-            <div class="term-name">${escHtml(g.nombre)}</div>
-            <div class="term-def">${escHtml(g.def)}</div>
-          </div>
-          <div class="term-category">${escHtml(g.cat)}</div>
-        </div>
-      `).join('')}
-    </div>
+    <div id="glosarioResults"></div>
   `;
 
-  // Focus search input
-  setTimeout(() => { const inp = el('glosarioInput'); if(inp) inp.focus(); }, 50);
+  // Attach input listener without recreating the input on every keystroke
+  const inp = document.getElementById('glosarioInput');
+  if (inp) {
+    inp.addEventListener('input', function() { filterGlosario(this.value); });
+  }
+
+  updateGlosarioResults();
+}
+
+function updateGlosarioResults() {
+  const resultsEl = document.getElementById('glosarioResults');
+  if (!resultsEl) return;
+
+  const filtered = GLOSARIO.filter(g => {
+    const matchCat = STATE.glosarioFilter === 'Todos' || g.cat === STATE.glosarioFilter;
+    const matchSearch = !STATE.glosarioSearch ||
+      g.nombre.toLowerCase().includes(STATE.glosarioSearch.toLowerCase()) ||
+      g.def.toLowerCase().includes(STATE.glosarioSearch.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
+  // When showing all with no search: group by category
+  if (STATE.glosarioFilter === 'Todos' && !STATE.glosarioSearch) {
+    const catOrder = [...new Set(GLOSARIO.map(g => g.cat))];
+    let html = `<div class="glosario-count">${filtered.length} términos</div>`;
+    let globalIdx = 0;
+    catOrder.forEach(cat => {
+      const catTerms = filtered.filter(g => g.cat === cat);
+      if (!catTerms.length) return;
+      html += `
+        <div class="glosario-cat-section">
+          <div class="glosario-cat-header">
+            <span class="glosario-cat-badge">${cat}</span>
+            <span class="glosario-cat-count">${catTerms.length} términos</span>
+          </div>
+          <div class="glosario-grid">
+            ${catTerms.map(g => {
+              const i = globalIdx++;
+              return `
+                <div class="glosario-term" id="term-${i}" onclick="toggleTerm(${i})">
+                  <div class="term-left">
+                    <div class="term-name">${escHtml(g.nombre)}</div>
+                    <div class="term-def">${escHtml(g.def)}</div>
+                  </div>
+                  <div class="term-category">${escHtml(g.cat)}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    });
+    resultsEl.innerHTML = html;
+  } else {
+    resultsEl.innerHTML = `
+      <div class="glosario-count">${filtered.length} términos encontrados</div>
+      <div class="glosario-grid">
+        ${filtered.map((g, i) => `
+          <div class="glosario-term" id="term-${i}" onclick="toggleTerm(${i})">
+            <div class="term-left">
+              <div class="term-name">${escHtml(g.nombre)}</div>
+              <div class="term-def">${escHtml(g.def)}</div>
+            </div>
+            <div class="term-category">${escHtml(g.cat)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
 }
 
 function filterGlosario(val) {
   STATE.glosarioSearch = val;
-  renderGlosario();
+  updateGlosarioResults();
 }
 
 function setGlosarioFilter(cat) {
   STATE.glosarioFilter = cat;
-  renderGlosario();
+  // Update active state on filter buttons without full re-render
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.trim() === cat);
+  });
+  updateGlosarioResults();
 }
 
 function toggleTerm(i) {
@@ -488,7 +534,7 @@ function renderSimulacros() {
     <div id="examList">
       <div class="section-hero">
         <h1>📝 Simulacros de Examen</h1>
-        <p>${SIMULACROS.length} simulacros completos traducidos al castellano. Con corrección inmediata, explicaciones y puntuación final.</p>
+        <p>${SIMULACROS.length} simulacros completos. Con corrección inmediata, explicaciones y puntuación final.</p>
       </div>
 
       <div class="simulacros-grid">
