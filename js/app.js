@@ -12,13 +12,15 @@ const STATE = {
   exam: {
     id: null,
     current: 0,
-    answers: {},      // { qIdx: [optIdx, ...] }
-    revealed: {},     // { qIdx: true }
+    answers: {},        // { qIdx: [optIdx, ...] }
+    revealed: {},       // { qIdx: true }
     startTime: null,
     timerInterval: null,
     elapsedSec: 0,
     submitted: false,
-    reviewing: false
+    reviewing: false,
+    customQuestions: null,  // para simulacro aleatorio o repasar errores
+    customTitle: null
   }
 };
 
@@ -43,6 +45,14 @@ function getExamProgress(examId) {
 
 function saveExamResult(examId, score, total, time) {
   saveProgress({ [`exam_${examId}`]: { score, total, pct: Math.round(score / total * 100), time, date: new Date().toLocaleDateString('es-ES') } });
+}
+
+// ---- Datos del examen activo (regular o custom) ----
+function getExamData() {
+  if (STATE.exam.customQuestions) {
+    return { id: STATE.exam.id, titulo: STATE.exam.customTitle || 'Examen', preguntas: STATE.exam.customQuestions };
+  }
+  return SIMULACROS.find(e => e.id === STATE.exam.id) || { id: null, titulo: '', preguntas: [] };
 }
 
 // ---- Router ----
@@ -537,6 +547,12 @@ function renderSimulacros() {
         <p>${SIMULACROS.length} simulacros completos. Con corrección inmediata, explicaciones y puntuación final.</p>
       </div>
 
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;align-items:center">
+        <button class="btn btn-primary" onclick="startRandomExam(65)">🎲 Simulacro Aleatorio (65 preguntas)</button>
+        <button class="btn btn-secondary" onclick="startRandomExam(20)">⚡ Test Rápido (20 preguntas)</button>
+        <span style="font-size:13px;color:var(--text3)">Mezcla preguntas de los ${SIMULACROS.length} simulacros al azar</span>
+      </div>
+
       <div class="simulacros-grid">
         ${SIMULACROS.map(e => {
           const p = getExamProgress(e.id);
@@ -586,7 +602,9 @@ function startExam(id) {
     timerInterval: null,
     elapsedSec: 0,
     submitted: false,
-    reviewing: false
+    reviewing: false,
+    customQuestions: null,
+    customTitle: null
   };
 
   el('examList').classList.add('hidden');
@@ -649,8 +667,10 @@ function updateTimer() {
 }
 
 function renderExamQuestion() {
-  const exam = SIMULACROS.find(e => e.id === STATE.exam.id);
-  if (!exam) return;
+  const exam = getExamData();
+  if (!exam || !exam.preguntas.length) return;
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 
   const { current, answers, revealed, submitted, reviewing } = STATE.exam;
   const q = exam.preguntas[current];
@@ -726,7 +746,7 @@ function renderExamQuestion() {
         <button class="btn btn-secondary btn-sm" onclick="goQuestion(${current-1})" ${current===0?'disabled':''}>← Anterior</button>
 
         <div class="question-dots">
-          ${exam.preguntas.slice(0, Math.min(total,30)).map((_,i) => {
+          ${exam.preguntas.map((_,i) => {
             const ans = answers[i];
             const rev = revealed[i] || submitted;
             const q2 = exam.preguntas[i];
@@ -738,7 +758,6 @@ function renderExamQuestion() {
             if (i === current) cls += ' current';
             return `<div class="q-dot ${cls}" onclick="goQuestion(${i})" title="Pregunta ${i+1}"></div>`;
           }).join('')}
-          ${total > 30 ? `<span style="font-size:11px;color:var(--text3)">+${total-30}</span>` : ''}
         </div>
 
         ${!submitted && !reviewing ? `
@@ -768,7 +787,7 @@ function renderExamQuestion() {
 }
 
 function toggleAnswer(qIdx, optIdx) {
-  const exam = SIMULACROS.find(e => e.id === STATE.exam.id);
+  const exam = getExamData();
   if (!exam) return;
   const q = exam.preguntas[qIdx];
   if (STATE.exam.revealed[qIdx] || STATE.exam.submitted) return;
@@ -800,7 +819,7 @@ function revealAnswer(qIdx) {
 }
 
 function goQuestion(idx) {
-  const exam = SIMULACROS.find(e => e.id === STATE.exam.id);
+  const exam = getExamData();
   if (!exam || idx < 0 || idx >= exam.preguntas.length) return;
   STATE.exam.current = idx;
   renderExamQuestion();
@@ -809,20 +828,22 @@ function goQuestion(idx) {
 function submitExam() {
   stopTimer();
   STATE.exam.submitted = true;
-  // Calculate score
-  const exam = SIMULACROS.find(e => e.id === STATE.exam.id);
+  const exam = getExamData();
   if (!exam) return;
   let score = 0;
   exam.preguntas.forEach((q, i) => {
     const ans = STATE.exam.answers[i] || [];
     if (ans.length === q.r.length && ans.every(a => q.r.includes(a))) score++;
   });
-  saveExamResult(STATE.exam.id, score, exam.preguntas.length, STATE.exam.elapsedSec);
+  // Solo guardar resultado en simulacros normales (no aleatorios ni repaso de errores)
+  if (!STATE.exam.customQuestions) {
+    saveExamResult(STATE.exam.id, score, exam.preguntas.length, STATE.exam.elapsedSec);
+  }
   showResults();
 }
 
 function showResults() {
-  const exam = SIMULACROS.find(e => e.id === STATE.exam.id);
+  const exam = getExamData();
   if (!exam) return;
   stopTimer();
 
@@ -840,6 +861,8 @@ function showResults() {
   const min = Math.floor(STATE.exam.elapsedSec / 60);
   const sec = STATE.exam.elapsedSec % 60;
   const timeStr = `${min}m ${sec}s`;
+  const isCustom = !!STATE.exam.customQuestions;
+  const wrongCount = wrong + unanswered;
 
   el('examRunner').innerHTML = `
     <div class="results-box">
@@ -866,10 +889,14 @@ function showResults() {
         </div>
       </div>
 
-      <div style="display:flex;gap:8px;margin-bottom:24px">
-        <button class="btn btn-primary" onclick="startExam(${exam.id})">🔄 Repetir examen</button>
-        <button class="btn btn-secondary" onclick="exitExam()">← Volver a simulacros</button>
-        <button class="btn btn-ghost" onclick="showReviewList(${exam.id})">📋 Ver corrección</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px">
+        ${!isCustom
+          ? `<button class="btn btn-primary" onclick="startExam(${exam.id})">🔄 Repetir examen</button>`
+          : `<button class="btn btn-primary" onclick="startRandomExam()">🎲 Nuevo aleatorio</button>`
+        }
+        <button class="btn btn-secondary" onclick="exitExam(true)">← Volver a simulacros</button>
+        <button class="btn btn-ghost" onclick="showCurrentCorrection()">📋 Ver corrección</button>
+        ${wrongCount > 0 ? `<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red)" onclick="retakeWrongQuestions()">❌ Repasar ${wrongCount} ${wrongCount===1?'error':'errores'}</button>` : ''}
       </div>
 
       <div class="progress-bar" style="margin-bottom:24px">
@@ -900,9 +927,112 @@ function showReviewList(id) {
   reviewExam(id);
 }
 
-function exitExam() {
+// ---- Ver corrección del examen actual (funciona con exámenes custom también) ----
+function showCurrentCorrection() {
+  const exam = getExamData();
+  if (!exam) return;
+  const savedAnswers = { ...STATE.exam.answers };
+  const savedId = STATE.exam.id;
+  const savedCustom = STATE.exam.customQuestions;
+  const savedTitle = STATE.exam.customTitle;
+
+  const revealed = {};
+  const answers = {};
+  exam.preguntas.forEach((q, i) => {
+    answers[i] = savedAnswers[i]?.length ? savedAnswers[i] : q.r;
+    revealed[i] = true;
+  });
+
+  STATE.exam = {
+    id: savedId,
+    current: 0,
+    answers,
+    revealed,
+    startTime: null, timerInterval: null, elapsedSec: 0,
+    submitted: true, reviewing: true,
+    customQuestions: savedCustom,
+    customTitle: savedTitle
+  };
+
+  renderExamQuestion();
+}
+
+// ---- Repasar solo preguntas falladas ----
+function retakeWrongQuestions() {
+  const exam = getExamData();
+  if (!exam) return;
+
+  const wrongQuestions = exam.preguntas.filter((q, i) => {
+    const ans = STATE.exam.answers[i] || [];
+    return ans.length === 0 || !(ans.length === q.r.length && ans.every(a => q.r.includes(a)));
+  });
+
+  if (!wrongQuestions.length) {
+    alert('¡No hay preguntas incorrectas!');
+    return;
+  }
+
+  const baseTitle = exam.titulo;
+  STATE.exam = {
+    id: exam.id,
+    current: 0,
+    answers: {},
+    revealed: {},
+    startTime: Date.now(),
+    timerInterval: null,
+    elapsedSec: 0,
+    submitted: false,
+    reviewing: false,
+    customQuestions: wrongQuestions,
+    customTitle: `${baseTitle} — Repaso de ${wrongQuestions.length} ${wrongQuestions.length === 1 ? 'error' : 'errores'}`
+  };
+
+  el('examRunner').innerHTML = '';
+  renderExamQuestion();
+  startTimer();
+}
+
+// ---- Simulacro aleatorio ----
+function startRandomExam(n = 65) {
+  // Mezcla preguntas de todos los simulacros
+  const allQuestions = [];
+  SIMULACROS.forEach(exam => exam.preguntas.forEach(q => allQuestions.push(q)));
+
+  // Fisher-Yates shuffle
+  for (let i = allQuestions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [allQuestions[i], allQuestions[j]] = [allQuestions[j], allQuestions[i]];
+  }
+
+  const selected = allQuestions.slice(0, Math.min(n, allQuestions.length));
+
+  STATE.exam = {
+    id: 0,
+    current: 0,
+    answers: {},
+    revealed: {},
+    startTime: Date.now(),
+    timerInterval: null,
+    elapsedSec: 0,
+    submitted: false,
+    reviewing: false,
+    customQuestions: selected,
+    customTitle: `🎲 Simulacro Aleatorio (${selected.length} preguntas)`
+  };
+
+  el('examList').classList.add('hidden');
+  el('examRunner').classList.add('active');
+  renderExamQuestion();
+  startTimer();
+}
+
+function exitExam(force = false) {
+  // Pedir confirmación si el examen está en curso (no terminado, no revisión)
+  if (!force && STATE.exam.id !== null && !STATE.exam.submitted && !STATE.exam.reviewing) {
+    if (!confirm('¿Seguro que quieres salir? Perderás el progreso del examen actual.')) return;
+  }
   stopTimer();
-  STATE.exam = { id: null, current: 0, answers: {}, revealed: {}, startTime: null, timerInterval: null, elapsedSec: 0, submitted: false, reviewing: false };
+  STATE.exam = { id: null, current: 0, answers: {}, revealed: {}, startTime: null, timerInterval: null, elapsedSec: 0, submitted: false, reviewing: false, customQuestions: null, customTitle: null };
   el('examRunner').classList.remove('active');
   el('examRunner').innerHTML = '';
   el('examList').classList.remove('hidden');
@@ -952,6 +1082,42 @@ function init() {
   document.addEventListener('click', e => {
     if (!e.target.closest('#navbar') && !e.target.closest('#mobileMenu') && !e.target.closest('#navToggle')) {
       closeMobileMenu();
+    }
+  });
+
+  // ---- Atajos de teclado en el examen ----
+  document.addEventListener('keydown', e => {
+    const runner = el('examRunner');
+    if (!runner || !runner.classList.contains('active')) return;
+    if (STATE.exam.submitted || STATE.exam.reviewing) {
+      // Solo navegación con flechas en modo revisión/resultados
+      if (e.key === 'ArrowRight') goQuestion(STATE.exam.current + 1);
+      else if (e.key === 'ArrowLeft') goQuestion(STATE.exam.current - 1);
+      return;
+    }
+    const exam = getExamData();
+    if (!exam || !exam.preguntas.length) return;
+    const q = exam.preguntas[STATE.exam.current];
+    if (!q) return;
+
+    const keyMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+    const key = e.key.toLowerCase();
+
+    // Evitar interferir con inputs de texto
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (keyMap[key] !== undefined) {
+      const optIdx = keyMap[key];
+      if (optIdx < q.ops.length && !STATE.exam.revealed[STATE.exam.current]) {
+        e.preventDefault();
+        toggleAnswer(STATE.exam.current, optIdx);
+      }
+    } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
+      e.preventDefault();
+      goQuestion(STATE.exam.current + 1);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      goQuestion(STATE.exam.current - 1);
     }
   });
 }

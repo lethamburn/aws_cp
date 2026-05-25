@@ -1203,27 +1203,31 @@ p  { color: var(--text2); line-height: 1.7; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .question-dots {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   flex-wrap: wrap;
   flex: 1;
+  min-width: 200px;
   justify-content: center;
+  padding: 4px 0;
 }
 
 .q-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--border);
   cursor: pointer;
   transition: var(--transition);
+  flex-shrink: 0;
 }
 
 .q-dot.answered   { background: var(--blue); }
-.q-dot.current    { background: var(--accent); transform: scale(1.4); }
+.q-dot.current    { background: var(--accent); transform: scale(1.5); }
 .q-dot.correct-d  { background: var(--green); }
 .q-dot.incorrect-d{ background: var(--red); }
 
