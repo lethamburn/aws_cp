@@ -248,19 +248,28 @@ function toggleTopic(id) {
 function markTopic(id, done) {
   const prog = loadProgress();
   prog[`topic_${id}`] = done ? 1 : 0;
-  // Count domain progress
   const domain = TEMARIO.find(d => d.temas.some(t => t.id === id));
   if (domain) {
     const done2 = domain.temas.filter(t => prog[`topic_${t.id}`]).length;
     prog[`domain_${domain.id}`] = done2;
   }
-  localStorage.setItem(PROG_KEY, JSON.stringify(prog));
-  renderTemario();
-  // Re-open the card
-  setTimeout(() => {
-    const card = document.getElementById(`card-${id}`);
-    if (card) card.classList.add('open');
-  }, 10);
+  try { localStorage.setItem(PROG_KEY, JSON.stringify(prog)); } catch {}
+
+  // Update only the badge in this card without closing/re-rendering
+  const card = document.getElementById(`card-${id}`);
+  if (card) {
+    const nameEl = card.querySelector('.topic-name');
+    if (nameEl) {
+      const existing = nameEl.querySelector('.badge-green');
+      if (done && !existing) {
+        nameEl.insertAdjacentHTML('beforeend', '<span class="badge badge-green" style="margin-left:6px">✓ Revisado</span>');
+      } else if (!done && existing) {
+        existing.remove();
+      }
+    }
+  } else {
+    renderTemario();
+  }
 }
 
 // ---- GLOSARIO ----
